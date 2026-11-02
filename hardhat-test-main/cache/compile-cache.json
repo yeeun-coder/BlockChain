@@ -1,0 +1,16 @@
+{
+  "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/contracts/Counter.sol": {
+    "jobHash": "solc-0_8_28-24af2df49a6159daa317870bcf4234146d2610d3",
+    "isolated": false,
+    "compilerType": "solc",
+    "artifactPaths": [
+      "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/artifacts/contracts/Counter.sol/Counter.json"
+    ],
+    "buildInfoPath": "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/artifacts/build-info/solc-0_8_28-24af2df49a6159daa317870bcf4234146d2610d3.json",
+    "buildInfoOutputPath": "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/artifacts/build-info/solc-0_8_28-24af2df49a6159daa317870bcf4234146d2610d3.output.json",
+    "typeFilePath": "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/artifacts/contracts/Counter.sol/artifacts.d.ts",
+    "wasm": false,
+    "artifactsDirectory": "/Users/yang-yeeun/Desktop/블록체인/hardhat-test-main/artifacts",
+    "emitsTypeDeclarations": true
+  }
+}
