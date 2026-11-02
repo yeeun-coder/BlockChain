@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>Counter</title>
+  <style>
+    body { font-family: "Malgun Gothic", sans-serif; max-width: 600px; margin: 30px auto; }
+    button { font-size: 16px; padding: 8px 16px; margin: 4px; }
+    #count { font-size: 40px; color: #1f4e9a; }
+  </style>
+</head>
+<body>
+  <h1>Counter (HTML + ethers.js + MetaMask)</h1>
+
+  <button id="connectBtn">MetaMask 연결</button>
+  <p>계정: <span id="account">-</span></p>
+  <p>네트워크 chain ID: <span id="network">-</span></p>
+  <p>Contract 주소: <span id="address">-</span></p>
+
+  <h2>count = <span id="count">-</span></h2>
+  <button id="incBtn" disabled>increment()</button>
+  <p id="status"></p>
+
+  <h3>Increment 이벤트</h3>
+  <ul id="events"></ul>
+
+  <script type="module">
+    // 1. ethers.js 불러오기 (node_modules 안의 브라우저용 파일)
+    import { ethers } from "/node_modules/ethers/dist/ethers.min.js";
+
+    // 2. ABI: interact.js 와 같음 (+ 이벤트)
+    const abi = [
+      "function count() view returns (uint256)",
+      "function increment()",
+      "function add(uint256)",
+      "event Increment(uint256 newValue)"
+    ];
+
+    let counter;
+    const $ = (id) => document.getElementById(id);
+
+    $("connectBtn").onclick = async () => {
+      try {
+        // 3. Provider: MetaMask (window.ethereum)
+        if (!window.ethereum) throw new Error("MetaMask가 설치되어 있지 않습니다");
+        const provider = new ethers.BrowserProvider(window.ethereum);
+
+        // 4. Signer: MetaMask 계정 (처음 한 번 연결 승인 창)
+        await provider.send("eth_requestAccounts", []);
+        const signer = await provider.getSigner();
+        const { chainId } = await provider.getNetwork();
+
+        // 5. 배포 주소: Ignition 배포 기록 파일을 웹 서버에서 읽기
+        const res = await fetch(`/ignition/deployments/chain-${chainId}/deployed_addresses.json`);
+        if (!res.ok) throw new Error(`chain ${chainId} 에 배포 기록이 없습니다 (MetaMask 네트워크 확인)`);
+        const address = (await res.json())["CounterModule#Counter"];
+
+        // 6. Contract: interact.js 와 같음
+        counter = new ethers.Contract(address, abi, signer);
+
+        $("account").textContent = await signer.getAddress();
+        $("network").textContent = chainId;
+        $("address").textContent = address;
+        $("connectBtn").disabled = true;
+        $("incBtn").disabled = false;
+        await showCount();
+
+        // 7. 이벤트: 누가 increment() 를 호출하든 화면에 표시
+        counter.on("Increment", (newValue) => {
+          $("events").innerHTML += `<li>Increment(${newValue})</li>`;
+          $("count").textContent = newValue;
+        });
+
+        // MetaMask 에서 네트워크나 계정을 바꾸면 새로 고침
+        window.ethereum.on("chainChanged", () => location.reload());
+        window.ethereum.on("accountsChanged", () => location.reload());
+      } catch (e) {
+        $("status").textContent = e.shortMessage ?? e.message;
+      }
+    };
+
+    // view 함수 → call (트랜잭션 X, MetaMask 창 X, 가스비 X)
+    async function showCount() {
+      $("count").textContent = await counter.count();
+    }
+
+    // 상태 변경 함수 → 트랜잭션 (MetaMask 확인 창, 가스비 O)
+    $("incBtn").onclick = async () => {
+      try {
+        $("status").textContent = "MetaMask에서 확인해 주세요";
+        const tx = await counter.increment();
+        $("status").textContent = "블록에 담기기를 기다리는 중… " + tx.hash;
+        const receipt = await tx.wait();
+        $("status").textContent = `완료: 블록 ${receipt.blockNumber}, 가스 ${receipt.gasUsed}`;
+        await showCount();
+      } catch (e) {
+        $("status").textContent = e.code === "ACTION_REJECTED" ? "MetaMask에서 거절함" : (e.shortMessage ?? e.message);
+      }
+    };
+  </script>
+</body>
+</html>
