@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>투표 (Ballot)</title>
+  <style>
+    body { font-family: "Malgun Gothic", sans-serif; max-width: 600px; margin: 30px auto; }
+    button { font-size: 15px; padding: 6px 14px; margin: 4px; }
+    input { font-size: 15px; padding: 5px; width: 360px; }
+    .row { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ddd; }
+    #winner { font-size: 26px; color: #1f4e9a; }
+  </style>
+</head>
+<body>
+  <script>
+    // 더블클릭(file://)으로 열면 MetaMask, import 가 동작하지 않음 → 웹 서버 주소로 열도록 안내
+    if (location.protocol === "file:") {
+      document.write('<p style="color:#c00000; font-weight:bold">더블클릭하지 말고, node scripts/serve.js 를 실행한 뒤 http://localhost:3000/web/' +
+        location.pathname.split("/").pop() + ' 로 여세요</p>');
+    }
+  </script>
+  <h1>🗳️ 투표 (Ballot)</h1>
+
+  <button id="connectBtn">MetaMask 연결</button>
+  <p>내 계정: <span id="me">-</span></p>
+  <p>의장: <span id="chair">-</span></p>
+  <p>내 상태: <b id="myState">-</b> <button id="registerBtn" hidden>투표권 받기 (register)</button></p>
+
+  <h3>후보</h3>
+  <div id="proposals"></div>
+  <p>현재 1등: <span id="winner">-</span></p>
+
+  <h3>위임 (내 표를 다른 사람에게 맡기기)</h3>
+  <input id="delegateTo" placeholder="0x… 주소">
+  <button id="delegateBtn" disabled>위임</button>
+
+  <div id="chairBox" hidden>
+    <h3>의장 전용: 투표권 주기</h3>
+    <input id="voterAddr" placeholder="0x… 주소">
+    <button id="giveBtn">투표권 주기</button>
+  </div>
+
+  <p id="status"></p>
+
+  <script type="module">
+    import { ethers } from "/node_modules/ethers/dist/ethers.min.js";
+
+    // struct 를 돌려주는 public getter 는 여러 값을 돌려줌
+    const abi = [
+      "function chairperson() view returns (address)",
+      "function voters(address) view returns (uint256 weight, bool voted, address delegate, uint256 vote)",
+      "function proposals(uint256) view returns (bytes32 name, uint256 voteCount)",
+      "function winnerName() view returns (bytes32)",
+      "function register()",
+      "function vote(uint256 proposal)",
+      "function delegate(address to)",
+      "function giveRightToVote(address voter)"
+    ];
+
+    let ballot, me;
+    const $ = (id) => document.getElementById(id);
+    const short = (a) => a.slice(0, 6) + "…" + a.slice(-4);
+
+    // MetaMask 에서 네트워크를 바꾸면 새로 고침, 연결된 뒤 계정을 바꿔도 새로 고침 (페이지를 열 때 바로 등록)
+    // (처음 연결을 승인할 때도 accountsChanged 가 오므로, 연결이 끝난 뒤에만 새로 고침)
+    window.ethereum?.on("chainChanged", () => location.reload());
+    window.ethereum?.on("accountsChanged", () => { if (ballot) location.reload(); });
+
+    $("connectBtn").onclick = async () => {
+      try {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        const signer = await provider.getSigner();
+        const { chainId } = await provider.getNetwork();
+        const res = await fetch(`/ignition/deployments/chain-${chainId}/deployed_addresses.json`);
+        if (!res.ok) {
+          // 이 네트워크에는 배포 기록이 없음 → MetaMask 에 Sepolia(0xaa36a7 = 11155111)로 바꿔 달라고 요청
+          $("status").textContent = `chain ${chainId} 에 배포 기록이 없습니다 → MetaMask에서 Sepolia로 전환해 주세요`;
+          await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]);
+          return;   // 전환되면 chainChanged → 새로 고침 → 연결 버튼 다시 누르기
+        }
+        const address = (await res.json())["BallotModule#Ballot"];
+        if (!address) throw new Error("Ballot 이 배포되지 않았습니다");
+        ballot = new ethers.Contract(address, abi, signer);
+        me = signer.address;
+
+        $("me").textContent = me;
+        $("connectBtn").disabled = true;
+        $("delegateBtn").disabled = false;
+        $("status").textContent = "";   // 이전 오류 문구 지우기
+        await refresh();
+      } catch (e) {
+        $("status").textContent = e.shortMessage ?? e.message;
+      }
+    };
+
+    // 화면 다시 그리기: view 함수만 사용 (가스비 X)
+    async function refresh() {
+      const chair = await ballot.chairperson();
+      $("chair").textContent = chair === me ? "나" : chair;
+      $("chairBox").hidden = chair !== me;
+
+      // voters(주소) → struct Voter { weight, voted, delegate, vote }
+      const v = await ballot.voters(me);
+      $("myState").textContent =
+        v.weight === 0n ? "투표권 없음" :
+        v.delegate !== ethers.ZeroAddress ? `위임함 (→ ${short(v.delegate)})` :   // 위임해도 voted = true
+        v.voted ? `투표함 (후보 ${v.vote})` : `투표 가능 (표 ${v.weight}개)`;
+      $("registerBtn").hidden = v.weight !== 0n;
+
+      // proposals 는 배열: 길이를 알려 주는 함수가 없어서 오류가 날 때까지 하나씩 읽음
+      let html = "";
+      for (let i = 0; ; i++) {
+        let p;
+        try { p = await ballot.proposals(i); } catch { break; }
+        const canVote = v.weight > 0n && !v.voted;
+        html += `<div class="row"><span>${i}. ${ethers.decodeBytes32String(p.name)} (${p.voteCount}표)</span>
+                 <button data-i="${i}" ${canVote ? "" : "disabled"}>투표</button></div>`;
+      }
+      $("proposals").innerHTML = html;
+      $("proposals").querySelectorAll("button").forEach((b) => (b.onclick = () => send("투표", () => ballot.vote(b.dataset.i))));
+      $("winner").textContent = ethers.decodeBytes32String(await ballot.winnerName());
+    }
+
+    // 트랜잭션 보내기 → MetaMask 확인 → 기다리기 → 화면 갱신 (모든 버튼이 함께 사용)
+    async function send(label, makeTx) {
+      try {
+        $("status").textContent = `${label}: MetaMask에서 확인해 주세요`;
+        const tx = await makeTx();
+        $("status").textContent = `${label}: 블록에 담기기를 기다리는 중…`;
+        await tx.wait();
+        $("status").textContent = `${label} 완료`;
+      } catch (e) {
+        $("status").textContent = e.code === "ACTION_REJECTED" ? "MetaMask에서 거절함" : (e.reason ?? e.shortMessage ?? e.message);
+      }
+      await refresh();
+    }
+
+    $("registerBtn").onclick = () => send("투표권 받기", () => ballot.register());
+    $("delegateBtn").onclick = () => send("위임", () => ballot.delegate($("delegateTo").value.trim()));
+    $("giveBtn").onclick = () => send("투표권 주기", () => ballot.giveRightToVote($("voterAddr").value.trim()));
+  </script>
+</body>
+</html>

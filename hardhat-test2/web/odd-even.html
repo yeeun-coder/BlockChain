@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>홀짝 게임</title>
+  <style>
+    body { font-family: "Malgun Gothic", sans-serif; max-width: 600px; margin: 30px auto; }
+    button { font-size: 16px; padding: 8px 16px; margin: 4px; }
+    .pick { font-size: 24px; width: 120px; }
+    #result { font-size: 28px; color: #1f4e9a; }
+  </style>
+</head>
+<body>
+  <script>
+    // 더블클릭(file://)으로 열면 MetaMask, import 가 동작하지 않음 → 웹 서버 주소로 열도록 안내
+    if (location.protocol === "file:") {
+      document.write('<p style="color:#c00000; font-weight:bold">더블클릭하지 말고, node scripts/serve.js 를 실행한 뒤 http://localhost:3000/web/' +
+        location.pathname.split("/").pop() + ' 로 여세요</p>');
+    }
+  </script>
+  <h1>🎲 홀짝 게임</h1>
+  <p>0.001 ETH를 걸고 홀/짝을 고르세요. 컨트랙트가 1~100 숫자를 뽑고, 맞추면 0.002 ETH!</p>
+
+  <button id="connectBtn">MetaMask 연결</button>
+  <p>계정: <span id="account">-</span></p>
+  <p>내 잔액: <span id="myBalance">-</span> / 게임 상금 준비금: <span id="pool">-</span></p>
+
+  <button id="oddBtn" class="pick" disabled>홀</button>
+  <button id="evenBtn" class="pick" disabled>짝</button>
+  <p id="result"></p>
+  <p id="status"></p>
+
+  <h3>최근 게임</h3>
+  <ul id="history"></ul>
+
+  <p>배포한 계정만: <button id="withdrawBtn" disabled>남은 준비금 회수</button></p>
+
+  <script type="module">
+    import { ethers } from "/node_modules/ethers/dist/ethers.min.js";
+
+    const abi = [
+      "function play(bool pickOdd) payable",
+      "function BET() view returns (uint256)",
+      "function withdraw()",
+      "event Played(address indexed player, bool pickOdd, uint256 number, bool win)"
+    ];
+
+    let provider, signer, game;
+    const $ = (id) => document.getElementById(id);
+    const eth = (wei) => Number(ethers.formatEther(wei)).toFixed(6) + " ETH";   // 소수점 6자리까지
+
+    // MetaMask 에서 네트워크를 바꾸면 새로 고침, 연결된 뒤 계정을 바꿔도 새로 고침 (페이지를 열 때 바로 등록)
+    // (처음 연결을 승인할 때도 accountsChanged 가 오므로, 연결이 끝난 뒤에만 새로 고침)
+    window.ethereum?.on("chainChanged", () => location.reload());
+    window.ethereum?.on("accountsChanged", () => { if (game) location.reload(); });
+
+    $("connectBtn").onclick = async () => {
+      try {
+        provider = new ethers.BrowserProvider(window.ethereum);
+        await provider.send("eth_requestAccounts", []);
+        signer = await provider.getSigner();
+        const { chainId } = await provider.getNetwork();
+        const res = await fetch(`/ignition/deployments/chain-${chainId}/deployed_addresses.json`);
+        if (!res.ok) {
+          // 이 네트워크에는 배포 기록이 없음 → MetaMask 에 Sepolia(0xaa36a7 = 11155111)로 바꿔 달라고 요청
+          $("status").textContent = `chain ${chainId} 에 배포 기록이 없습니다 → MetaMask에서 Sepolia로 전환해 주세요`;
+          await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]);
+          return;   // 전환되면 chainChanged → 새로 고침 → 연결 버튼 다시 누르기
+        }
+        const address = (await res.json())["OddEvenModule#OddEven"];
+        if (!address) throw new Error("OddEven 이 배포되지 않았습니다");
+        game = new ethers.Contract(address, abi, signer);
+
+        $("account").textContent = signer.address;
+        $("connectBtn").disabled = true;
+        $("oddBtn").disabled = $("evenBtn").disabled = false;
+        $("withdrawBtn").disabled = false;
+        $("status").textContent = "";   // 이전 오류 문구 지우기
+        await refresh();
+      } catch (e) {
+        $("status").textContent = e.shortMessage ?? e.message;
+      }
+    };
+
+    $("oddBtn").onclick = () => play(true);
+    $("evenBtn").onclick = () => play(false);
+
+    async function play(pickOdd) {
+      try {
+        $("result").textContent = "";
+        $("status").textContent = "MetaMask에서 확인해 주세요";
+        // payable 함수: { value } 로 ETH 를 함께 보냄
+        const value = await game.BET();
+        // 가스는 보내기 전에 미리 실행해서 정함 → 실패할 거래(금액 틀림, 상금 부족)는 이유와 함께 멈춤, 보내지 않음
+        const tx = await game.play(pickOdd, { value });
+        $("status").textContent = "블록에 담기기를 기다리는 중…";
+        const receipt = await tx.wait();
+
+        // receipt.logs 에서 Played 이벤트 찾기 → 뽑힌 숫자, 승패
+        const ev = receipt.logs.map((log) => game.interface.parseLog(log)).find((p) => p?.name === "Played");
+        const { number, win } = ev.args;
+        $("result").textContent = `뽑힌 숫자: ${number} (${number % 2n === 1n ? "홀" : "짝"})`;
+        $("status").textContent = win ? "🎉 이겼습니다! 0.002 ETH를 받았습니다" : "❌ 졌습니다";
+      } catch (e) {
+        $("status").textContent = e.code === "ACTION_REJECTED" ? "MetaMask에서 거절함" : (e.reason ?? e.shortMessage ?? e.message);
+      }
+      await refresh();
+    }
+
+    // 남은 준비금 회수: 배포한 계정(owner)만 가능 → 다른 계정이면 미리 실행에서 "only owner" 로 멈춤, 보내지 않음
+    $("withdrawBtn").onclick = async () => {
+      try {
+        $("status").textContent = "MetaMask에서 확인해 주세요";
+        const tx = await game.withdraw();
+        $("status").textContent = "블록에 담기기를 기다리는 중…";
+        await tx.wait();
+        $("status").textContent = "남은 준비금을 회수했습니다";
+      } catch (e) {
+        $("status").textContent = e.code === "ACTION_REJECTED" ? "MetaMask에서 거절함" : (e.reason ?? e.shortMessage ?? e.message);
+      }
+      await refresh();
+    };
+
+    async function refresh() {
+      $("myBalance").textContent = eth(await provider.getBalance(signer.address));
+      $("pool").textContent = eth(await provider.getBalance(await game.getAddress()));
+
+      // 최근 5000 블록의 Played 이벤트 (가스비 X)
+      const latest = await provider.getBlockNumber();
+      const logs = await game.queryFilter(game.filters.Played(), Math.max(0, latest - 5000));
+      $("history").innerHTML = logs.reverse().slice(0, 10).map((l) =>
+        `<li>${l.args.player.slice(0, 6)}… ${l.args.pickOdd ? "홀" : "짝"} → ${l.args.number} ${l.args.win ? "🎉" : "❌"}</li>`
+      ).join("");
+    }
+  </script>
+</body>
+</html>
