@@ -1,0 +1,20 @@
+{
+  "name": "hardhat-test2",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "hardhat build",
+    "node": "hardhat node",
+    "serve": "node scripts/serve.js",
+    "deploy:oddeven": "hardhat ignition deploy ignition/modules/OddEven.ts --network sepolia",
+    "deploy:ballot": "hardhat ignition deploy ignition/modules/Ballot.ts --network sepolia"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "4.0.0",
+    "hardhat": "3.20.0"
+  },
+  "dependencies": {
+    "ethers": "6.17.0"
+  }
+}
