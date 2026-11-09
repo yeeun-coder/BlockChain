@@ -16,4 +16,8 @@ contract Counter {
         count += value;
         emit Increment(count);
     }
+
+    function subtract(uint256 value) public {
+        count -= value;
+    }
 }
