@@ -1,0 +1,6 @@
+# Vercel CLI로 배포할 때는 .gitignore가 적용되지 않으므로 여기에도 적습니다.
+# (.env.local, node_modules, .vercel 등은 Vercel이 기본으로 제외합니다)
+.env
+StudentID.csv
+node24
+local-server.js
