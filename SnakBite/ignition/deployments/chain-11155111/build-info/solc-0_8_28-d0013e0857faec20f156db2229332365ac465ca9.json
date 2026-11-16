@@ -1,0 +1,49 @@
+{
+  "_format": "hh3-sol-build-info-1",
+  "id": "solc-0_8_28-d0013e0857faec20f156db2229332365ac465ca9",
+  "solcVersion": "0.8.28",
+  "solcLongVersion": "0.8.28+commit.7893614a",
+  "compilerType": "solc",
+  "toolVersions": {
+    "hardhat": "3.20.0"
+  },
+  "userSourceNameMap": {
+    "contracts/SnakBite.sol": "project/contracts/SnakBite.sol"
+  },
+  "input": {
+    "language": "Solidity",
+    "settings": {
+      "evmVersion": "cancun",
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "": [
+            "ast"
+          ],
+          "*": [
+            "abi",
+            "evm.bytecode.linkReferences",
+            "evm.bytecode.object",
+            "evm.bytecode.opcodes",
+            "evm.bytecode.sourceMap",
+            "evm.deployedBytecode.immutableReferences",
+            "evm.deployedBytecode.linkReferences",
+            "evm.deployedBytecode.object",
+            "evm.deployedBytecode.opcodes",
+            "evm.deployedBytecode.sourceMap",
+            "evm.methodIdentifiers"
+          ]
+        }
+      },
+      "remappings": []
+    },
+    "sources": {
+      "project/contracts/SnakBite.sol": {
+        "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\n\n// SnakBite 순위표: 플레이어마다 최고 기록 1개만 저장\n// 쓰기(submitScore)는 저장만 하고, 정렬은 읽기(getTop)에서 함\n// → 다른 사람이 먼저 올려도 가스량이 달라지지 않음 (가스 예상이 맞음), 정렬 비용은 view 라서 가스비 X\ncontract SnakBite {\n    uint32 public constant MAX_SCORE = 9999;\n    uint256 public constant MAX_NAME_BYTES = 30;   // 한글 10자\n\n    struct Entry {\n        address player;\n        string name;\n        uint32 score;\n        uint64 time;\n    }\n\n    mapping(address => Entry) private records;\n    address[] public players;\n\n    event ScoreSubmitted(address indexed player, string name, uint32 score);\n\n    // 점수는 브라우저가 보내는 값을 그대로 믿음 → 조작할 수 있음 (생각해 보기)\n    function submitScore(uint32 score, string calldata name) external {\n        require(score > 0 && score <= MAX_SCORE, \"invalid score\");\n        require(bytes(name).length > 0 && bytes(name).length <= MAX_NAME_BYTES, \"invalid name\");\n\n        Entry storage record = records[msg.sender];\n        require(score > record.score, \"not your best\");\n\n        if (record.player == address(0)) {\n            record.player = msg.sender;\n            players.push(msg.sender);\n        }\n        record.name = name;\n        record.score = score;\n        record.time = uint64(block.timestamp);\n\n        emit ScoreSubmitted(msg.sender, name, score);\n    }\n\n    // 상위 limit 명: 점수가 높은 순, 같은 점수면 먼저 달성한 순\n    function getTop(uint256 limit) external view returns (Entry[] memory) {\n        uint256 size = limit < players.length ? limit : players.length;\n        Entry[] memory top = new Entry[](size);\n        if (size == 0) return top;\n\n        uint256 filled = 0;\n        for (uint256 i = 0; i < players.length; i++) {\n            Entry memory current = records[players[i]];\n            if (filled == size && !isAhead(current, top[size - 1])) continue;\n\n            uint256 j = filled < size ? filled++ : size - 1;\n            while (j > 0 && isAhead(current, top[j - 1])) {\n                top[j] = top[j - 1];\n                j--;\n            }\n            top[j] = current;\n        }\n        return top;\n    }\n\n    // 전체 순위 (1위부터), 기록이 없으면 0\n    function rankOf(address player) external view returns (uint256) {\n        Entry memory mine = records[player];\n        if (mine.player == address(0)) return 0;\n\n        uint256 rank = 1;\n        for (uint256 i = 0; i < players.length; i++) {\n            if (players[i] != player && isAhead(records[players[i]], mine)) rank++;\n        }\n        return rank;\n    }\n\n    function bestScore(address player) external view returns (uint32) {\n        return records[player].score;\n    }\n\n    function playerCount() external view returns (uint256) {\n        return players.length;\n    }\n\n    function isAhead(Entry memory a, Entry memory b) private pure returns (bool) {\n        return a.score > b.score || (a.score == b.score && a.time < b.time);\n    }\n}\n"
+      }
+    }
+  }
+}
