@@ -1,0 +1,18 @@
+{
+  "name": "testether",
+  "private": true,
+  "description": "학번과 주소를 입력하면 0.1 Sepolia ETH를 보내 주는 강의용 예제",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=.env local-server.js"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "viem": "^2.56.5"
+  },
+  "devDependencies": {
+    "vercel": "^59.16.0"
+  }
+}

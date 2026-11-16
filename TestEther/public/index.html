@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TestEther - Sepolia 테스트 ETH 받기</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; line-height: 1.5; }
+    label { display: block; margin-top: 12px; }
+    input { width: 100%; padding: 8px; box-sizing: border-box; font-size: 1rem; }
+    button { margin-top: 16px; padding: 10px 16px; font-size: 1rem; }
+    #result { margin-top: 20px; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Sepolia 테스트 ETH 받기</h1>
+  <p>학번과 Ethereum 주소를 입력하면 0.1 Sepolia ETH를 보냅니다.</p>
+
+  <form id="form">
+    <label>학번 <input id="studentId" required /></label>
+    <label>Ethereum 주소 <input id="address" placeholder="0x..." required /></label>
+    <button id="button" type="submit">요청</button>
+  </form>
+
+  <p id="result"></p>
+
+  <script>
+    // 결과를 알 수 없을 때 안내할 지급 지갑의 거래 내역 페이지
+    const FAUCET_HISTORY = 'https://sepolia.etherscan.io/address/0x3d4898C971777cdD50edcEA774c0664a1B344EbB';
+
+    const form = document.getElementById('form');
+    const button = document.getElementById('button');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault(); // 폼 제출로 페이지가 새로고침되지 않게 함
+
+      // 요청 중에는 버튼을 비활성화해 중복 클릭을 막습니다.
+      button.disabled = true;
+      showResult('요청 중입니다... (확정까지 30초 정도 걸릴 수 있습니다)');
+
+      try {
+        // 서버 API(api/send.js)에 학번과 주소만 보냅니다. 개인키는 서버에만 있습니다.
+        const response = await fetch('/api/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentId: document.getElementById('studentId').value,
+            address: document.getElementById('address').value,
+          }),
+        });
+        // 서버는 { message, link } 형태의 JSON으로 결과를 돌려줍니다.
+        const data = await response.json();
+        showResult(data.message, data.link);
+      } catch {
+        // 네트워크 오류나 JSON이 아닌 응답(예: Vercel 오류 페이지)은 송금 여부를 알 수 없으므로
+        // "실패"라고 단정하지 않고 지급 지갑의 거래 내역을 확인하도록 안내합니다.
+        showResult('결과 확인 불가, 지급 지갑의 거래 내역을 확인하세요', FAUCET_HISTORY);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // 결과 메시지와 (있으면) 탐색기 링크를 표시합니다.
+    function showResult(message, link) {
+      const result = document.getElementById('result');
+      result.textContent = message;
+      if (link) {
+        const a = document.createElement('a');
+        a.href = link;
+        a.target = '_blank';
+        a.textContent = '탐색기에서 보기';
+        result.append(' ', a);
+      }
+    }
+  </script>
+</body>
+</html>
