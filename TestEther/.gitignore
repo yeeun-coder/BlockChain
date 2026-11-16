@@ -1,0 +1,16 @@
+# 설치된 라이브러리
+node_modules/
+
+# 이 프로젝트 전용 Node.js (각자 내려받아 사용)
+node24/
+
+# 개인 설정: .env로 시작하는 파일 모두 제외 (개인키, RPC URL, Vercel 토큰)
+# 단, 공개 예시인 .env.example은 올림
+.env*
+!.env.example
+
+# 실제 학번 목록 (공개 예시는 StudentID.example.csv)
+StudentID.csv
+
+# vercel link가 만드는 로컬 연결 정보
+.vercel
