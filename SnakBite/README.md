@@ -1,0 +1,52 @@
+# SnakBite: 블록체인 순위표 예제 (Hardhat 3 + ethers.js + React)
+
+60초 동안 간식을 먹는 브라우저 게임입니다. 게임은 브라우저에서 돌아가고, 최고 기록과 순위만 컨트랙트에 저장합니다.
+
+| 파일 | 내용 |
+|---|---|
+| `contracts/SnakBite.sol` | 순위표 컨트랙트 |
+| `ignition/modules/SnakBite.ts` | 배포 모듈 |
+| `web/src/SnackGame.jsx` | 게임 (canvas) |
+| `web/src/App.jsx` | MetaMask 연결, 점수 등록, 순위표 |
+| `web/src/contract.js` | ABI, Sepolia 배포 주소 찾기 |
+
+## 설치
+Node.js 22.13 이상이 필요합니다.
+```
+git clone https://github.com/Inhatc-BlockChain/SnakBite.git
+cd SnakBite
+npm ci
+```
+
+## Sepolia 에 배포하고 실행
+다른 Hardhat 프로젝트에서 keystore 에 `SEPOLIA_RPC_URL`, `SEPOLIA_PRIVATE_KEY` 를 넣었다면 다시 넣지 않아도 됩니다.
+```
+npm run deploy:sepolia
+npm run dev                      # MetaMask 를 Sepolia 로 → http://localhost:5173
+```
+- **배포한 뒤에 `npm run dev` 를 시작합니다.** 배포 기록은 시작할 때 읽으므로, 다시 배포했다면 껐다가 다시 실행합니다.
+- 점수 등록에 ETH 를 보내지는 않고 가스비만 듭니다. 처음 등록은 가스 약 119,000 (컨트랙트의 첫 참가자는 약 136,000) 입니다.
+
+## 반 전체가 같은 순위표 쓰기
+각자 배포하면 순위표도 각자 따로입니다. 이 저장소에는 수업용으로 배포한 컨트랙트의 주소 파일(`ignition/deployments/chain-11155111/deployed_addresses.json`)이 들어 있습니다. 각자 배포하면 이 파일이 내 주소로 바뀌므로, 반 전체가 같은 순위표를 쓰려면 GitHub 버전으로 되돌립니다.
+```
+git checkout -- ignition/deployments/chain-11155111/deployed_addresses.json
+npm run dev                      # 켜져 있으면 Ctrl + C 로 끄고 다시
+```
+- 배포하지 않았다면 되돌릴 필요 없이 `npm run dev` 만 하면 됩니다.
+- 설치 없이 https://snak-bite.vercel.app 에 접속해도 같은 순위표입니다.
+
+## 수업에서 볼 곳
+- **쓰기는 저장만, 정렬은 view 에서**: `submitScore` 는 내 기록만 저장하고, 정렬은 `getTop` 에서 합니다. 쓰기에서 배열을 정렬하면 다른 사람이 먼저 등록할 때 가스량이 달라져, 가스 예상이 어긋나고 out of gas 가 날 수 있습니다 (홀짝 게임의 가스 예상 문제와 같은 원인).
+- **한 사람 한 줄**: `mapping(address => Entry)` 로 플레이어마다 최고 기록 하나만 둡니다.
+- **미리 실행으로 거절**: 최고 기록을 넘지 못하면 `"not your best"` 로 멈추고 거래를 보내지 않습니다.
+- **React 와 ethers.js**: `BrowserProvider` → `getSigner` → `Contract`, `contract.on("ScoreSubmitted", …)` 로 다른 사람이 올린 점수를 바로 반영합니다.
+
+## 생각해 보기
+- `submitScore(9999, "해커")` 를 콘솔에서 직접 호출하면? 컨트랙트는 점수가 진짜인지 모릅니다. 막으려면 서버 서명, 게임 시작 기록과 시간 제한, 입력 기록을 다시 계산하기 같은 방법이 필요하고, 각각 비용과 신뢰 문제가 있습니다.
+- 참가자가 아주 많아지면 `getTop` 은 어떻게 될까요? view 라서 가스비는 없지만 RPC 의 실행 한도에 걸릴 수 있습니다.
+
+## 확인 환경 (2026-11-09)
+Node.js 24.20 / npm 11.19 / hardhat 3.20.0 / ethers 6.17.0 / React 19.3.1 / Vite 7.3.7 / solc 0.8.28
+
+실제 Sepolia 와 MetaMask 대신 chain ID 11155111 의 임시 노드와 시험용 지갑 코드로 확인했습니다. 수업 전에 실제 MetaMask + Sepolia 로 한 번 리허설이 필요합니다.
